@@ -1,7 +1,8 @@
+import regex
+
 from pyparsing import Literal as L, ParseException, Optional, OneOrMore, \
     ZeroOrMore, oneOf, Regex, Combine, Word, NotAny, nums
 
-# (* ************************** Level 0 *************************** *)
 from edtf.parser.parser_classes import Date, DateAndTime, Interval, Unspecified, \
     UncertainOrApproximate, Level1Interval, LongYear, Season, \
     PartialUncertainOrApproximate, UA, PartialUnspecified, OneOfASet, \
@@ -9,6 +10,60 @@ from edtf.parser.parser_classes import Date, DateAndTime, Interval, Unspecified,
     MaskedPrecision, Level2Interval, ExponentialYear
 
 from edtf.parser.edtf_exceptions import EDTFParseException
+
+
+# (* ************************** Level 0 *************************** *)
+
+RE = {}
+
+def add_re(name: str, reg_ex: str):
+    RE[name] = [
+        regex.compile(fr'^{reg_ex}$'),
+        regex.compile(reg_ex),
+]
+
+one_thru_12 = r'0[123456789]|1[012]'
+one_thru_13 = r'0[123456789]|1[0123]'
+one_thru_23 = r'0[123456789]|1[0123456789]|2[0123]'
+zero_thru_23 = r'[01][0123456789]|2[0123]'
+one_thru_29 = r'0[123456789]|[12][0123456789]'
+one_thru_30 = r'0[123456789]|[12][0123456789]|30'
+one_thru_31 = r'0[123456789]|[12][0123456789]|3[01]'
+one_thru_59 = r'0[123456789]|[12345][0123456789]'
+zero_thru_59 = r'[012345][0123456789]'
+
+positive_digit = r'[123456789]'
+digit = r'[0123456789]'
+
+second = zero_thru_59
+minute = zero_thru_59
+hour = zero_thru_23
+day = fr'(?P<day>{one_thru_31})'
+
+month = fr'(?P<month>{one_thru_12})'
+month_day = (
+    fr'(?:(?P<month>0[13578]|1[02])-(?P<day>{one_thru_31}))'
+    fr'|(?:(?P<month>0[469]|11)-(?P<day>{one_thru_30}))'
+    fr'|(?:(?P<month>02)-(?P<day>{one_thru_29}))'
+)
+
+positive_year = r'[0123456789]{4}'
+negative_year = fr'(?!-0000)-{positive_year}'
+
+year = fr'(?P<year>{positive_year}|{negative_year})'
+year_month = fr'{year}-{month}'
+year_month_day = fr'{year}-{month_day}'
+
+date = fr'(?P<date>{year}|{year_month}|{year_month_day})'
+
+
+
+
+add_re('year_month_day', year_month_day)
+add_re('year_month', year_month)
+add_re('year', year)
+
+
 
 oneThru12 = oneOf(['%.2d' % i for i in range(1, 13)])
 oneThru13 = oneOf(['%.2d' % i for i in range(1, 14)])
@@ -279,6 +334,32 @@ edtfParser = level0Expression("level0") ^ level1Expression("level1") ^ level2Exp
 
 
 def parse_edtf(str, parseAll=True, fail_silently=False):
+    if not str:
+        raise EDTFParseException('You must supply some input text')
+    str = str.strip()
+    if parseAll:
+        # date
+        if m:= RE['year_month_day'][0].match(str):
+            return Date(year=m.group('year'), month=m.group('month'), day=m.group('day'))
+        if m:= RE['year_month'][0].match(str):
+            return Date(year=m.group('year'), month=m.group('month'))
+        if m:= RE['year'][0].match(str):
+            return Date(year=m.group('year'))
+    else:
+        # make sure biggest matches are tested first
+        # date
+        if m:= RE['year_month_day'][1].search(str):
+            return Date(year=m.group('year'), month=m.group('month'), day=m.group('day'))
+        if m:= RE['year_month'][1].search(str):
+            return Date(year=m.group('year'), month=m.group('month'))
+        if m:= RE['year'][1].search(str):
+            return Date(year=m.group('year'))
+
+    if fail_silently:
+        return None
+    raise EDTFParseException('Invalid Extended Date/Time Format')
+
+
     try:
         if not str:
             raise ParseException("You must supply some input text")
