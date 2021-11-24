@@ -22,14 +22,14 @@ def add_re(name: str, reg_ex: str):
         regex.compile(reg_ex),
 ]
 
-one_thru_12 = r'0[123456789]|1[012]'
-one_thru_13 = r'0[123456789]|1[0123]'
-one_thru_23 = r'0[123456789]|1[0123456789]|2[0123]'
-zero_thru_23 = r'[01][0123456789]|2[0123]'
-one_thru_29 = r'0[123456789]|[12][0123456789]'
-one_thru_30 = r'0[123456789]|[12][0123456789]|30'
-one_thru_31 = r'0[123456789]|[12][0123456789]|3[01]'
-one_thru_59 = r'0[123456789]|[12345][0123456789]'
+one_thru_12 = r'(?:0[123456789]|1[012])'
+one_thru_13 = r'(?:0[123456789]|1[0123])'
+one_thru_23 = r'(?:0[123456789]|1[0123456789]|2[0123])'
+zero_thru_23 = r'(?:[01][0123456789]|2[0123])'
+one_thru_29 = r'(?:0[123456789]|[12][0123456789])'
+one_thru_30 = r'(?:0[123456789]|[12][0123456789]|30)'
+one_thru_31 = r'(?:0[123456789]|[12][0123456789]|3[01])'
+one_thru_59 = r'(?:0[123456789]|[12345][0123456789])'
 zero_thru_59 = r'[012345][0123456789]'
 
 positive_digit = r'[123456789]'
@@ -42,9 +42,11 @@ day = fr'(?P<day>{one_thru_31})'
 
 month = fr'(?P<month>{one_thru_12})'
 month_day = (
-    fr'(?:(?P<month>0[13578]|1[02])-(?P<day>{one_thru_31}))'
-    fr'|(?:(?P<month>0[469]|11)-(?P<day>{one_thru_30}))'
-    fr'|(?:(?P<month>02)-(?P<day>{one_thru_29}))'
+    r'(?:'
+    fr'(?P<month>0[13578]|1[02])-(?P<day>{one_thru_31})'
+    fr'|(?P<month>0[469]|11)-(?P<day>{one_thru_30})'
+    fr'|(?P<month>02)-(?P<day>{one_thru_29})'
+    r')'
 )
 
 positive_year = r'[0123456789]{4}'
@@ -52,19 +54,32 @@ negative_year = fr'(?!-0000)-{positive_year}'
 
 year = fr'(?P<year>{positive_year}|{negative_year})'
 year_month = fr'{year}-{month}'
-year_month_day = fr'{year}-(?:{month_day})'
+year_month_day = fr'{year}-{month_day}'
 
 date = fr'(?P<date>{year}|{year_month}|{year_month_day})'
 
-# zone_offset_hour = one_thru_13
-# zone_offset = fr'Z|[+-]'
+zone_offset_hour = one_thru_13
+zone_offset = (
+    r'Z'
+    fr'|[+-]{zone_offset_hour}(?::{minute})?'
+    r'|14:00'
+    fr'|00:{one_thru_59}'
+)
+
+base_time = fr'(?:{hour}:{minute}:{second}|24:00:00)'
+
+time = fr'(?P<time>{base_time}(?:{zone_offset})?)'
+
+date_and_time = fr'{date}T{time}'
+print(date_and_time)
+
+l_0_interval = fr'(?P<lower>{date})/(?P<upper>{date.replace("<year>", "<year1>").replace("<month>", "<month1>").replace("<day>", "<day1>")})'
 
 
 
-
-add_re('year_month_day', year_month_day)
-add_re('year_month', year_month)
-add_re('year', year)
+add_re('date', date)
+add_re('date_and_time', date_and_time)
+add_re('l_0_interval', l_0_interval)
 
 
 
@@ -343,14 +358,18 @@ def parse_edtf(str, parseAll=True, fail_silently=False):
     if parseAll:
         # return first match
         # date
-        if m:= RE['year_month_day'][0].search(str):
-            print(RE['year_month_day'][0])
-            print(m)
+        if m:= RE['date'][0].search(str):
             return Date(year=m.group('year'), month=m.group('month'), day=m.group('day'))
-        if m:= RE['year_month'][0].search(str):
-            return Date(year=m.group('year'), month=m.group('month'))
-        if m:= RE['year'][0].search(str):
-            return Date(year=m.group('year'))
+        if m:= RE['date_and_time'][0].search(str):
+            return DateAndTime(
+                date=Date(year=m.group('year'), month=m.group('month'), day=m.group('day')),
+                time=m.group('time'),
+            )
+        if m:= RE['l_0_interval'][0].search(str):
+            return Interval(
+                lower=Date(year=m.group('year'), month=m.group('month'), day=m.group('day')),
+                upper=Date(year=m.group('year1'), month=m.group('month1'), day=m.group('day1')),
+            )
     # else:
     #     # return longest match
     #     size_longest_match = 0
