@@ -52,9 +52,12 @@ negative_year = fr'(?!-0000)-{positive_year}'
 
 year = fr'(?P<year>{positive_year}|{negative_year})'
 year_month = fr'{year}-{month}'
-year_month_day = fr'{year}-{month_day}'
+year_month_day = fr'{year}-(?:{month_day})'
 
 date = fr'(?P<date>{year}|{year_month}|{year_month_day})'
+
+# zone_offset_hour = one_thru_13
+# zone_offset = fr'Z|[+-]'
 
 
 
@@ -338,22 +341,30 @@ def parse_edtf(str, parseAll=True, fail_silently=False):
         raise EDTFParseException('You must supply some input text')
     str = str.strip()
     if parseAll:
+        # return first match
         # date
-        if m:= RE['year_month_day'][0].match(str):
+        if m:= RE['year_month_day'][0].search(str):
+            print(RE['year_month_day'][0])
+            print(m)
             return Date(year=m.group('year'), month=m.group('month'), day=m.group('day'))
-        if m:= RE['year_month'][0].match(str):
+        if m:= RE['year_month'][0].search(str):
             return Date(year=m.group('year'), month=m.group('month'))
-        if m:= RE['year'][0].match(str):
+        if m:= RE['year'][0].search(str):
             return Date(year=m.group('year'))
-    else:
-        # make sure biggest matches are tested first
-        # date
-        if m:= RE['year_month_day'][1].search(str):
-            return Date(year=m.group('year'), month=m.group('month'), day=m.group('day'))
-        if m:= RE['year_month'][1].search(str):
-            return Date(year=m.group('year'), month=m.group('month'))
-        if m:= RE['year'][1].search(str):
-            return Date(year=m.group('year'))
+    # else:
+    #     # return longest match
+    #     size_longest_match = 0
+    #     match = None
+    #     # date
+    #     if m:= RE['year_month_day'][1].search(str):
+    #         match = Date(year=m.group('year'), month=m.group('month'), day=m.group('day'))
+    #     elif m:= RE['year_month'][1].search(str):
+    #         match = Date(year=m.group('year'), month=m.group('month'))
+    #     elif m:= RE['year'][1].search(str):
+    #         match = Date(year=m.group('year'))
+
+    #     if match is not None:
+    #         return match
 
     if fail_silently:
         return None
