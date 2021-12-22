@@ -219,7 +219,7 @@ class Date(EDTFObject):
 
     def set_year(self, y):
         if y is None:
-            raise AttributeError("Year must not be None")
+            raise AttributeError('Year must not be None')
         self._year = y
 
     def get_year(self):
@@ -245,12 +245,16 @@ class Date(EDTFObject):
         self.month = month
         self.day = day
 
+        print(self.year)
+        print(self.month)
+        print(self.day)
+
     def __str__(self):
         r = self.year
         if self.month:
-            r += "-%s" % self.month
+            r += f'-{self.month}'
             if self.day:
-                r += "-%s" % self.day
+                r += f'-{self.day}'
         return r
 
     def isoformat(self, default=date.max):
@@ -263,21 +267,21 @@ class Date(EDTFObject):
     def _precise_year(self, lean):
         # Replace any ambiguous characters in the year string with 0s or 9s
         if lean == EARLIEST:
-            return int(re.sub(r'[xu]', r'0', self.year))
+            return int(re.sub(r'[X]', r'0', self.year))
         else:
-            return int(re.sub(r'[xu]', r'9', self.year))
+            return int(re.sub(r'[X]', r'9', self.year))
 
     def _precise_month(self, lean):
-        if self.month and self.month != "uu":
+        if self.month and self.month != 'XX':
             try:
                 return int(self.month)
             except ValueError as e:
-                raise ValueError("Couldn't convert %s to int (in %s)" % (self.month, self))
+                raise ValueError(f'Couldn\'t convert {self.month} to int (in {self})')
         else:
             return 1 if lean == EARLIEST else 12
 
     def _precise_day(self, lean):
-        if not self.day or self.day == 'uu':
+        if not self.day or self.day == 'XX':
             if lean == EARLIEST:
                 return 1
             else:
@@ -373,25 +377,16 @@ class Interval(EDTFObject):
 
 
 class UA(EDTFObject):
-    @classmethod
-    def parse_action(cls, toks):
-        args = toks.asList()
-        return cls(*args)
-
-    def __init__(self, *args):
-        assert len(args)==1
-        ua = args[0]
-
-        self.is_uncertain = "?" in ua
-        self.is_approximate = "~" in ua
+    def __init__(self, ua):
+        self.is_uncertain = ua in '?%'
+        self.is_approximate = ua in '~%'
 
     def __str__(self):
-        d = ""
         if self.is_uncertain:
-            d += "?"
-        if self.is_approximate:
-            d += "~"
-        return d
+            if self.is_approximate:
+                return '%'
+            return '?'
+        return '~'
 
     def _get_multiplier(self):
         if self.is_uncertain and self.is_approximate:
@@ -409,15 +404,16 @@ class UncertainOrApproximate(EDTFObject):
 
     def __str__(self):
         if self.ua:
-            return "%s%s" % (self.date, self.ua)
+            return f'{self.date}{self.ua}'
         else:
             return str(self.date)
 
+    # TODO: move open and unknwown to Level1Interval
     def _strict_date(self, lean):
-        if self.date == "open":
-            return dt_to_struct_time(date.today())
-        if self.date =="unknown":
+        if not self.date:
             return None # depends on the other date
+        if self.date == '..':
+            return dt_to_struct_time(date.today())
         return self.date._strict_date(lean)
 
     def _get_fuzzy_padding(self, lean):
@@ -454,7 +450,7 @@ class LongYear(EDTFObject):
         self.year = year
 
     def __str__(self):
-        return "y%s" % self.year
+        return f'Y{self.year}'
 
     def _precise_year(self):
         return int(self.year)
@@ -478,7 +474,7 @@ class Season(Date):
         self.day = None
 
     def __str__(self):
-        return "%s-%s" % (self.year, self.season)
+        return f'{self.year}-{self.season}'
 
     def _precise_month(self, lean):
         rng = appsettings.SEASON_MONTHS_RANGE[int(self.season)]

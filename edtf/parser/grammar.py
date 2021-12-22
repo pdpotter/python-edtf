@@ -11,16 +11,16 @@ from edtf.parser.parser_classes import Date, DateAndTime, Interval, Unspecified,
 
 from edtf.parser.edtf_exceptions import EDTFParseException
 
+def create_compiled_regex(input):
+    return regex.compile(fr'^{input}$')
+
+def suffix_named_groups(input, groups, suffix):
+    result = input
+    for g in groups:
+        result = result.replace(f'<{g}>', f'<{g}_{suffix}>')
+    return result
 
 # (* ************************** Level 0 *************************** *)
-
-RE = {}
-
-def add_re(name: str, reg_ex: str):
-    RE[name] = [
-        regex.compile(fr'^{reg_ex}$'),
-        regex.compile(reg_ex),
-]
 
 one_thru_12 = r'(?:0[123456789]|1[012])'
 one_thru_13 = r'(?:0[123456789]|1[0123])'
@@ -31,9 +31,6 @@ one_thru_30 = r'(?:0[123456789]|[12][0123456789]|30)'
 one_thru_31 = r'(?:0[123456789]|[12][0123456789]|3[01])'
 one_thru_59 = r'(?:0[123456789]|[12345][0123456789])'
 zero_thru_59 = r'[012345][0123456789]'
-
-positive_digit = r'[123456789]'
-digit = r'[0123456789]'
 
 second = zero_thru_59
 minute = zero_thru_59
@@ -71,15 +68,66 @@ base_time = fr'(?:{hour}:{minute}:{second}|24:00:00)'
 time = fr'(?P<time>{base_time}(?:{zone_offset})?)'
 
 date_and_time = fr'{date}T{time}'
-print(date_and_time)
 
-l_0_interval = fr'(?P<lower>{date})/(?P<upper>{date.replace("<year>", "<year1>").replace("<month>", "<month1>").replace("<day>", "<day1>")})'
+date_lower = suffix_named_groups(date, ['year', 'month', 'day'], 'lower')
+date_upper = suffix_named_groups(date, ['year', 'month', 'day'], 'upper')
+
+l_0_interval = (
+    fr'{date_lower}'
+    r'/'
+    fr'{date_upper}'
+)
+
+re_date = create_compiled_regex(date)
+re_date_and_time = create_compiled_regex(date_and_time)
+re_l_0_interval = create_compiled_regex(l_0_interval)
+
+# (* ************************** Level 1 *************************** *)
+
+# (* ** Auxiliary Assignments for Level 1 ** *)
+uncertain_or_approximate = r'(?P<ua>[?~%])'
+
+season_number = r'(?P<season>[2][1234])'
+
+# (* *** Season (unqualified) *** *)
+season = fr'(?:{year}-{season_number})'
+
+date_or_season = fr'{date}|{season}'
+
+# (* *** Long Year - Simple Form *** *)
+long_year_simple = fr'(?P<year>Y-?[123456789][0123456789]{{3}}[0123456789]+)'
+
+# (* *** L1Interval *** *)
+uncertain_or_approximate_date_or_season = fr'(?:{date_or_season}{uncertain_or_approximate}?)'
+
+uncertain_or_approximate_date_or_season_lower = suffix_named_groups(uncertain_or_approximate_date_or_season, ['year', 'month', 'day', 'ua'], 'lower')
+uncertain_or_approximate_date_or_season_upper = suffix_named_groups(uncertain_or_approximate_date_or_season, ['year', 'month', 'day', 'ua'], 'upper')
+l_1_interval = (
+    fr'(?:{uncertain_or_approximate_date_or_season_lower}|(?P<open_lower>[.][.]))?'
+    r'/'
+    fr'(?:{uncertain_or_approximate_date_or_season_upper}|(?P<open_upper>[.][.]))?'
+)
+
+# (* *** unspecified *** *)
+year_with_one_or_two_unspecified_digits = r'(?P<year>[0123456789]{2}[0123456789X]X)'
+month_unspecified = fr'(?:{year}-(?P<month>XX))'
+day_unspecified = fr'(?:{year_month}-(?P<day>XX))'
+# TODO: fix
+day_and_month_unspecified = fr'(?:{year}-(?P<month>XX)-(?P<day>XX))'
+
+unspecified = fr'{year_with_one_or_two_unspecified_digits}|{month_unspecified}|{day_unspecified}|{day_and_month_unspecified}'
+
+# (* *** uncertainOrApproxDate *** *)
+uncertain_or_approximate_date = fr'{date}{uncertain_or_approximate}'
+
+re_uncertain_or_approximate_date = create_compiled_regex(uncertain_or_approximate_date)
+re_unspecified = create_compiled_regex(unspecified)
+re_l_1_interval = create_compiled_regex(l_1_interval)
+re_long_year_simple = create_compiled_regex(long_year_simple)
+re_season = create_compiled_regex(season)
 
 
 
-add_re('date', date)
-add_re('date_and_time', date_and_time)
-add_re('l_0_interval', l_0_interval)
 
 
 
@@ -351,39 +399,51 @@ level2Expression = partialUncertainOrApproximate \
 edtfParser = level0Expression("level0") ^ level1Expression("level1") ^ level2Expression("level2")
 
 
-def parse_edtf(str, parseAll=True, fail_silently=False):
+def parse_edtf(str, fail_silently=False):
     if not str:
         raise EDTFParseException('You must supply some input text')
     str = str.strip()
-    if parseAll:
-        # return first match
-        # date
-        if m:= RE['date'][0].search(str):
-            return Date(year=m.group('year'), month=m.group('month'), day=m.group('day'))
-        if m:= RE['date_and_time'][0].search(str):
-            return DateAndTime(
-                date=Date(year=m.group('year'), month=m.group('month'), day=m.group('day')),
-                time=m.group('time'),
-            )
-        if m:= RE['l_0_interval'][0].search(str):
-            return Interval(
-                lower=Date(year=m.group('year'), month=m.group('month'), day=m.group('day')),
-                upper=Date(year=m.group('year1'), month=m.group('month1'), day=m.group('day1')),
-            )
-    # else:
-    #     # return longest match
-    #     size_longest_match = 0
-    #     match = None
-    #     # date
-    #     if m:= RE['year_month_day'][1].search(str):
-    #         match = Date(year=m.group('year'), month=m.group('month'), day=m.group('day'))
-    #     elif m:= RE['year_month'][1].search(str):
-    #         match = Date(year=m.group('year'), month=m.group('month'))
-    #     elif m:= RE['year'][1].search(str):
-    #         match = Date(year=m.group('year'))
 
-    #     if match is not None:
-    #         return match
+    # level 0
+    if m:= re_date.match(str):
+        return Date(year=m.group('year'), month=m.group('month'), day=m.group('day'))
+    if m:= re_date_and_time.match(str):
+        return DateAndTime(
+            date=Date(year=m.group('year'), month=m.group('month'), day=m.group('day')),
+            time=m.group('time'),
+        )
+    if m:= re_l_0_interval.match(str):
+        return Interval(
+            lower=Date(year=m.group('year_lower'), month=m.group('month_lower'), day=m.group('day_lower')),
+            upper=Date(year=m.group('year_upper'), month=m.group('month_upper'), day=m.group('day_upper')),
+        )
+
+    # level 1
+    if m:= re_uncertain_or_approximate_date.match(str):
+        return UncertainOrApproximate(
+            date=Date(year=m.group('year'), month=m.group('month'), day=m.group('day')),
+            ua=UA(ua=m.group('ua')),
+        )
+    if m:= re_unspecified.match(str):
+        return Unspecified(year=m.group('year'), month=m.group('month'), day=m.group('day'))
+    if m:=re_l_1_interval.match(str):
+        ends = {}
+        for end in ['lower', 'upper']:
+            if m.group(f'year_{end}') is None:
+                if m.group(f'open_{end}') is not None:
+                    ends[end] = UncertainOrApproximate(date=m.group(f'open_{end}'))
+                else:
+                    ends[end] = UncertainOrApproximate()
+            else:
+                ends[end] = UncertainOrApproximate(
+                    date=Date(year=m.group(f'year_{end}'), month=m.group(f'month_{end}'), day=m.group(f'day_{end}')),
+                    ua=UA(ua=m.group(f'ua_{end}')),
+                )
+        return Level1Interval(lower=ends['lower'], upper=ends['upper'])
+    if m:=re_long_year_simple.match(str):
+        return LongYear(year=m.group('year'))
+    if m:=re_season.match(str):
+        return Season(year=m.group('year'), season=m.group('season'))
 
     if fail_silently:
         return None
